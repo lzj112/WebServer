@@ -373,7 +373,7 @@ size_t Fread(void *ptr, size_t size, size_t nmemb, FILE *stream)
 void Fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) 
 {
     if (fwrite(ptr, size, nmemb, stream) < nmemb)
-	unix_error("Fwrite error");
+	    unix_error("Fwrite error");
 }
 
 
@@ -386,7 +386,7 @@ int Socket(int domain, int type, int protocol)
     int rc;
 
     if ((rc = socket(domain, type, protocol)) < 0)
-	unix_error("Socket error");
+	    unix_error("Socket error");
     return rc;
 }
 
@@ -395,7 +395,7 @@ void Setsockopt(int s, int level, int optname, const void *optval, int optlen)
     int rc;
 
     if ((rc = setsockopt(s, level, optname, optval, optlen)) < 0)
-	unix_error("Setsockopt error");
+	    unix_error("Setsockopt error");
 }
 
 void Bind(int sockfd, struct sockaddr *my_addr, int addrlen) 
@@ -403,7 +403,7 @@ void Bind(int sockfd, struct sockaddr *my_addr, int addrlen)
     int rc;
 
     if ((rc = bind(sockfd, my_addr, addrlen)) < 0)
-	unix_error("Bind error");
+	    unix_error("Bind error");
 }
 
 void Listen(int s, int backlog) 
@@ -411,7 +411,7 @@ void Listen(int s, int backlog)
     int rc;
 
     if ((rc = listen(s,  backlog)) < 0)
-	unix_error("Listen error");
+	    unix_error("Listen error");
 }
 
 int Accept(int s, struct sockaddr *addr, socklen_t *addrlen) 
@@ -419,7 +419,7 @@ int Accept(int s, struct sockaddr *addr, socklen_t *addrlen)
     int rc;
 
     if ((rc = accept(s, addr, addrlen)) < 0)
-	unix_error("Accept error");
+	    unix_error("Accept error");
     return rc;
 }
 
@@ -428,7 +428,7 @@ void Connect(int sockfd, struct sockaddr *serv_addr, int addrlen)
     int rc;
 
     if ((rc = connect(sockfd, serv_addr, addrlen)) < 0)
-	unix_error("Connect error");
+	    unix_error("Connect error");
 }
 
 /************************
@@ -556,6 +556,7 @@ ssize_t rio_readn(int fd, void *usrbuf, size_t n)
 
 /*
  * rio_writen - robustly write n bytes (unbuffered)
+ * 稳健的写入n个字节(无缓冲)
  */
 /* $begin rio_writen */
 ssize_t rio_writen(int fd, void *usrbuf, size_t n) 
@@ -586,31 +587,41 @@ ssize_t rio_writen(int fd, void *usrbuf, size_t n)
  *    rio_cnt is the number of unread bytes in the internal buffer. On
  *    entry, rio_read() refills the internal buffer via a call to
  *    read() if the internal buffer is empty.
+ * 
+ * n是用户请求的字节数,rio_cnt是rp中buffer未读字节数的数量
  */
 /* $begin rio_read */
 static ssize_t rio_read(rio_t *rp, char *usrbuf, size_t n)
 {
     int cnt;
 
-    while (rp->rio_cnt <= 0) {  /* Refill if buf is empty */
-	rp->rio_cnt = read(rp->rio_fd, rp->rio_buf, 
-			   sizeof(rp->rio_buf));
-	if (rp->rio_cnt < 0) {
-	    if (errno != EINTR) /* Interrupted by sig handler return */
-		return -1;
-	}
-	else if (rp->rio_cnt == 0)  /* EOF */
-	    return 0;
-	else 
-	    rp->rio_bufptr = rp->rio_buf; /* Reset buffer ptr */
+    //如果rp中的buffer是空的就读取
+    while (rp->rio_cnt <= 0) /* Refill if buf is empty */
+    {  
+        rp->rio_cnt = read(rp->rio_fd, rp->rio_buf, 
+			               sizeof(rp->rio_buf));
+        if (rp->rio_cnt < 0) 
+        {
+            if (errno != EINTR) /* Interrupted by sig handler return */
+                return -1;
+        }
+        else if (rp->rio_cnt == 0)  /* EOF */
+            return 0;
+        else 
+            //将下一个未读字节指向buffer头
+            rp->rio_bufptr = rp->rio_buf; /* Reset buffer ptr */
     }
 
     /* Copy min(n, rp->rio_cnt) bytes from internal buf to user buf */
-    cnt = n;          
+    //cnt记录的是rp中未读字节数和用户请求数更小的量(不然不够么,很好理解)
+    //即,先紧着rp中buf的用,有的话上面就不继续填充了
+    cnt = n;    
     if (rp->rio_cnt < n)   
-	cnt = rp->rio_cnt;
+	    cnt = rp->rio_cnt;
     memcpy(usrbuf, rp->rio_bufptr, cnt);
+    //未读字节位置+cnt
     rp->rio_bufptr += cnt;
+    //rp中buf的数据量-cnt
     rp->rio_cnt -= cnt;
     return cnt;
 }
@@ -618,6 +629,7 @@ static ssize_t rio_read(rio_t *rp, char *usrbuf, size_t n)
 
 /*
  * rio_readinitb - Associate a descriptor with a read buffer and reset buffer
+ * 将描述符与读缓冲区和复位缓冲区关联
  */
 /* $begin rio_readinitb */
 void rio_readinitb(rio_t *rp, int fd) 
@@ -652,6 +664,7 @@ ssize_t rio_readnb(rio_t *rp, void *usrbuf, size_t n)
 
 /* 
  * rio_readlineb - robustly read a text line (buffered)
+ * 读取缓冲区,每次只读一行
  */
 /* $begin rio_readlineb */
 ssize_t rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen) 
@@ -659,22 +672,32 @@ ssize_t rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen)
     int n, rc;
     char c, *bufp = usrbuf;
 
-    for (n = 1; n < maxlen; n++) { 
-        if ((rc = rio_read(rp, &c, 1)) == 1) {
-	    *bufp++ = c;
-	    if (c == '\n') {
+    for (n = 1; n < maxlen; n++) 
+    { 
+        //读取文件描述符的内容,每次只从缓冲区读一个字节
+        if ((rc = rio_read(rp, &c, 1)) == 1) 
+        {
+            *bufp++ = c;
+            //读完请求行结束
+            if (c == '\n') 
+            {
                 n++;
-     		break;
+                break;
             }
-	} else if (rc == 0) {
-	    if (n == 1)
-		return 0; /* EOF, no data read */
-	    else
-		break;    /* EOF, some data was read */
-	} else
-	    return -1;	  /* Error */
+	    } 
+        else if (rc == 0) 
+        {
+            if (n == 1)
+                return 0; /* EOF, no data read */
+            else
+                break;    /* EOF, some data was read */
+        } 
+        else
+            return -1;	  /* Error */
     }
+    //使末尾为0,即"\r\n0"
     *bufp = 0;
+    //返回读到的请求行字节数
     return n-1;
 }
 /* $end rio_readlineb */
@@ -711,12 +734,13 @@ ssize_t Rio_readnb(rio_t *rp, void *usrbuf, size_t n)
     return rc;
 }
 
+//读取请求内容,封装了错误处理
 ssize_t Rio_readlineb(rio_t *rp, void *usrbuf, size_t maxlen) 
 {
     ssize_t rc;
 
     if ((rc = rio_readlineb(rp, usrbuf, maxlen)) < 0)
-	unix_error("Rio_readlineb error");
+	    unix_error("Rio_readlineb error");
     return rc;
 } 
 

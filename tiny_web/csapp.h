@@ -40,9 +40,9 @@ typedef struct sockaddr SA;
 /* $begin rio_t */
 #define RIO_BUFSIZE 8192
 typedef struct {
-    int rio_fd;                /* Descriptor for this internal buf */
-    int rio_cnt;               /* Unread bytes in internal buf */
-    char *rio_bufptr;          /* Next unread byte in internal buf */
+    int rio_fd;                /* Descriptor for this internal buf 文件描述符 */
+    int rio_cnt;               /* Unread bytes in internal buf. rio_buf的未读字节数量*/
+    char *rio_bufptr;          /* Next unread byte in internal buf. 下一个未读字节在rio_buf中的位置 */
     char rio_buf[RIO_BUFSIZE]; /* Internal buffer */
 } rio_t;
 /* $end rio_t */
